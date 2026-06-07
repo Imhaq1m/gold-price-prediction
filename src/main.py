@@ -236,6 +236,9 @@ def main():
                 "feature_scaler": cv_feat_scaler,
                 "target_scaler": cv_tgt_scaler,
                 "test_df": cv_test_df,
+                "actual_prices": cv_actual_prices,
+                "pred_prices_raw": cv_pred_prices,
+                "dates": cv_test_dates[-len(cv_actual_prices) :],
             }
         )
 
@@ -260,6 +263,22 @@ def main():
     print(f"Best fold: {best_fold['fold']} (R²={best_fold['metrics']['R²']:.4f})")
     print(f"{'=' * 60}")
 
+    # Stitch all folds' predictions for full-range visualization
+    all_dates = []
+    all_actual = []
+    all_pred = []
+    for r in cv_results:
+        fold_mean_error = np.mean(
+            (r["actual_prices"] - r["pred_prices_raw"]) / r["actual_prices"]
+        )
+        fold_pred_corrected = r["pred_prices_raw"] / (1 - fold_mean_error)
+        all_actual.append(r["actual_prices"])
+        all_pred.append(fold_pred_corrected)
+        all_dates.append(r["dates"])
+    all_actual = np.concatenate(all_actual)
+    all_pred = np.concatenate(all_pred)
+    all_dates = np.concatenate(all_dates)
+
     # Use best model for final evaluation
     model = best_fold["model"]
     feature_scaler = best_fold["feature_scaler"]
@@ -267,6 +286,51 @@ def main():
     test_df = best_fold["test_df"]
     test_dates = best_fold["test_df"].index
     metrics = best_fold["metrics"]
+
+    # ==========================================
+    # RETRAIN ON ALL DATA
+    # ==========================================
+    print("\n[RETRAIN] Training final model on all available data...")
+    print("-" * 40)
+
+    all_feat_scaled = feature_scaler.transform(df[feature_columns].values)
+    all_tgt_scaled = target_scaler.transform(
+        df["returns"].values.reshape(-1, 1)
+    ).ravel()
+    X_all, y_all = create_sequences(
+        all_feat_scaled, all_tgt_scaled, SEQ_LENGTH, FORECAST_HORIZON
+    )
+    print(f"  Total samples: {len(X_all)}")
+
+    retrain_val_split = int(len(X_all) * 0.9)
+    X_rt = X_all[:retrain_val_split]
+    y_rt = y_all[:retrain_val_split]
+    X_rv = X_all[retrain_val_split:]
+    y_rv = y_all[retrain_val_split:]
+    print(f"  Train: {len(X_rt)}, Validation: {len(X_rv)}")
+
+    retrain_model = LSTMAttentionModel(
+        input_size=X_all.shape[2],
+        hidden_size=50,
+        num_heads=4,
+        key_dim=50,
+        dropout=0.2,
+        output_size=FORECAST_HORIZON,
+    )
+
+    train_model(
+        model=retrain_model,
+        X_train=X_rt,
+        y_train=y_rt,
+        X_val=X_rv,
+        y_val=y_rv,
+        epochs=50,
+        batch_size=32,
+        learning_rate=0.003,
+        patience_es=15,
+        model_path=None,
+    )
+    print("  Final model training complete.")
 
     # ==========================================
     # STEP 8: FINAL EVALUATION (Best CV Fold)
@@ -399,13 +463,13 @@ def main():
     actual_prices = prev_close_prices_temp[-n_test:] * (1 + actual_returns_1step)
 
     # ==========================================
-    # BIAS CORRECTION
+    # BIAS CORRECTION (percentage-based)
     # ==========================================
     print("\nApplying Bias Correction...")
-    mean_error = np.mean(actual_prices - raw_pred_prices)
-    pred_prices = raw_pred_prices + mean_error
-    print(f"  Mean Bias: {mean_error:.2f} USD")
-    print(f"  Correction: Predictions shifted by {mean_error:.2f} USD")
+    mean_error = np.mean((actual_prices - raw_pred_prices) / actual_prices)
+    pred_prices = raw_pred_prices / (1 - mean_error)
+    print(f"  Mean Bias: {mean_error * 100:.2f}%")
+    print(f"  Correction: Predictions scaled by {(1 / (1 - mean_error)):.4f}x")
 
     # Recalculate metrics with corrected predictions
     corrected_metrics = calculate_metrics(actual_prices, pred_prices)
@@ -419,13 +483,13 @@ def main():
 
     predictions_df = pd.DataFrame(
         {
-            "Actual": actual_prices,
-            "Predicted": pred_prices,
-            "Error": actual_prices - pred_prices,
-            "Error_%": ((actual_prices - pred_prices) / actual_prices) * 100,
+            "Actual": all_actual,
+            "Predicted": all_pred,
+            "Error": all_actual - all_pred,
+            "Error_%": ((all_actual - all_pred) / all_actual) * 100,
         }
     )
-    predictions_df.index = test_dates[-n_test:]
+    predictions_df.index = all_dates
     predictions_df.to_csv("results/predictions.csv")
     print(f"\nPredictions saved to results/predictions.csv")
 
@@ -434,19 +498,19 @@ def main():
     # ==========================================
     print("\nGenerating visualizations...")
 
-    # Plot predictions vs actual
+    # Plot predictions vs actual (all CV folds stitched)
     plot_predictions(
-        actual_prices,
-        pred_prices,
-        dates=test_dates[-n_test:],
-        title="Gold Price: LSTM Prediction vs Actual (1-step)",
+        all_actual,
+        all_pred,
+        dates=all_dates,
+        title="Gold Price: LSTM Prediction vs Actual (All CV Folds)",
         save_path="results/predictions_vs_actual.png",
     )
 
     # Plot error distribution
     plot_error_distribution(
-        actual_prices,
-        pred_prices,
+        all_actual,
+        all_pred,
         save_path="results/error_distribution.png",
     )
 
@@ -462,19 +526,19 @@ def main():
         f.write(f"{mean_error:.6f}")
     print(f"  - feature_scaler.pkl")
     print(f"  - target_scaler.pkl")
-    print(f"  - bias_correction.txt (mean_error={mean_error:.4f})")
+    print(f"  - bias_correction.txt (mean_error_pct={mean_error * 100:.4f}%)")
 
-    # Save the best model with forecast_horizon metadata
+    # Save the retrained (on all data) model
     torch.save(
         {
-            "model_state_dict": model.state_dict(),
-            "input_size": model.lstm.input_size,
+            "model_state_dict": retrain_model.state_dict(),
+            "input_size": retrain_model.lstm.input_size,
             "output_size": FORECAST_HORIZON,
             "forecast_horizon": FORECAST_HORIZON,
         },
         "models/best_lstm_attention.pt",
     )
-    print(f"  - best_lstm_attention.pt (H={FORECAST_HORIZON})")
+    print(f"  - best_lstm_attention.pt (H={FORECAST_HORIZON}, retrained on all data)")
 
     # ==========================================
     # SUMMARY

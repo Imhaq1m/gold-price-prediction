@@ -435,6 +435,35 @@ def train_model(
                 patience_counter = 0
 
                 # Save best model
+                if model_path is not None:
+                    _out_size = (
+                        model.fc.out_features
+                        if hasattr(model.fc, "out_features")
+                        else 1
+                    )
+                    torch.save(
+                        {
+                            "model_state_dict": best_state,
+                            "input_size": X_train.shape[2],
+                            "output_size": _out_size,
+                            "hidden_sizes": [128, 64, 32],
+                            "dropout_rates": [0.3, 0.2, 0.2],
+                        },
+                        model_path,
+                    )
+            else:
+                patience_counter += 1
+                if patience_counter >= patience_es:
+                    print(f"\nEarly stopping triggered at epoch {epoch + 1}")
+                    break
+        else:
+            print(
+                f"Epoch {epoch + 1}/{epochs} - "
+                f"Loss: {avg_train_loss:.6f} - MAE: {avg_train_mae:.6f}"
+            )
+            # No validation, just save every epoch
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            if model_path is not None:
                 _out_size = (
                     model.fc.out_features if hasattr(model.fc, "out_features") else 1
                 )
@@ -448,38 +477,14 @@ def train_model(
                     },
                     model_path,
                 )
-            else:
-                patience_counter += 1
-                if patience_counter >= patience_es:
-                    print(f"\nEarly stopping triggered at epoch {epoch + 1}")
-                    break
-        else:
-            print(
-                f"Epoch {epoch + 1}/{epochs} - "
-                f"Loss: {avg_train_loss:.6f} - MAE: {avg_train_mae:.6f}"
-            )
-            # No validation, just save every epoch
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
-            _out_size = (
-                model.fc.out_features if hasattr(model.fc, "out_features") else 1
-            )
-            torch.save(
-                {
-                    "model_state_dict": best_state,
-                    "input_size": X_train.shape[2],
-                    "output_size": _out_size,
-                    "hidden_sizes": [128, 64, 32],
-                    "dropout_rates": [0.3, 0.2, 0.2],
-                },
-                model_path,
-            )
 
     # Restore best model
     if best_state is not None:
         model.load_state_dict(best_state)
 
     print(f"Training completed! Best val_loss: {best_val_loss:.6f}")
-    print(f"Model saved to {model_path}")
+    if model_path is not None:
+        print(f"Model saved to {model_path}")
 
     return history
 
@@ -527,3 +532,44 @@ def load_model(model_path: str) -> nn.Module:
     model.load_state_dict(checkpoint["model_state_dict"])
 
     return model
+
+
+def load_cv_models(num_folds: int = 5, prefix: str = "models/cv_fold_") -> list:
+    """Load all CV fold models as a list.
+
+    Args:
+        num_folds: Number of folds (default 5)
+        prefix: Path prefix for model checkpoints
+
+    Returns:
+        List of loaded PyTorch models in eval mode
+    """
+    models = []
+    for fold in range(1, num_folds + 1):
+        path = f"{prefix}{fold}.pt"
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        output_size = ckpt.get("output_size", 1)
+        model = LSTMAttentionModel(
+            input_size=ckpt["input_size"], output_size=output_size
+        )
+        model.load_state_dict(ckpt["model_state_dict"])
+        model.eval()
+        models.append(model)
+    return models
+
+
+def ensemble_predict(models: list, X: np.ndarray) -> np.ndarray:
+    """Average predictions across an ensemble of models.
+
+    Args:
+        models: List of PyTorch models
+        X: Input features array
+
+    Returns:
+        Averaged predictions as numpy array
+    """
+    all_preds = []
+    for model in models:
+        pred = predict(model, X)
+        all_preds.append(pred)
+    return np.mean(all_preds, axis=0)

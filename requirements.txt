@@ -6,6 +6,5 @@ torch>=2.0.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 ta>=0.10.0
-flask>=3.0.0
 
 

@@ -1,6 +1,7 @@
 """
 Evaluation and visualization module for gold price prediction.
 """
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,17 +11,14 @@ from typing import Dict, Tuple
 import os
 
 
-def calculate_metrics(
-    y_true: np.ndarray, 
-    y_pred: np.ndarray
-) -> Dict[str, float]:
+def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     """
     Calculate regression metrics.
-    
+
     Args:
         y_true: True values
         y_pred: Predicted values
-        
+
     Returns:
         Dictionary of metrics
     """
@@ -28,58 +26,58 @@ def calculate_metrics(
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
     r2 = r2_score(y_true, y_pred)
-    
+
     # Directional accuracy
     if len(y_true) > 1:
-        true_direction = np.diff(y_true)
-        pred_direction = np.diff(y_pred)
+        true_direction = np.sign(np.diff(y_true))
+        pred_direction = np.sign(np.diff(y_pred))
         directional_accuracy = np.mean(true_direction == pred_direction) * 100
     else:
         directional_accuracy = None
-    
+
     metrics = {
-        'MAE': mae,
-        'RMSE': rmse,
-        'MAPE': mape,
-        'R²': r2,
-        'Directional Accuracy (%)': directional_accuracy
+        "MAE": mae,
+        "RMSE": rmse,
+        "MAPE": mape,
+        "R²": r2,
+        "Directional Accuracy (%)": directional_accuracy,
     }
-    
+
     return metrics
 
 
 def print_metrics(metrics: Dict[str, float], title: str = "Model Performance"):
     """
     Print metrics in a formatted way.
-    
+
     Args:
         metrics: Dictionary of metrics
         title: Title for the output
     """
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"{title}")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
     for metric_name, value in metrics.items():
         if value is not None:
-            if 'Accuracy' in metric_name:
+            if "Accuracy" in metric_name:
                 print(f"{metric_name:25s}: {value:.2f}%")
-            elif 'MAPE' in metric_name or 'R²' in metric_name:
+            elif "MAPE" in metric_name or "R²" in metric_name:
                 print(f"{metric_name:25s}: {value:.4f}")
             else:
                 print(f"{metric_name:25s}: {value:.6f}")
-    print(f"{'='*50}\n")
+    print(f"{'=' * 50}\n")
 
 
 def plot_predictions(
-    y_true: np.ndarray, 
+    y_true: np.ndarray,
     y_pred: np.ndarray,
     dates: pd.DatetimeIndex = None,
     title: str = "Gold Price Prediction vs Actual",
-    save_path: str = None
+    save_path: str = None,
 ):
     """
     Plot predicted vs actual values.
-    
+
     Args:
         y_true: True values
         y_pred: Predicted values
@@ -88,27 +86,27 @@ def plot_predictions(
         save_path: Path to save the plot
     """
     plt.figure(figsize=(14, 7))
-    
+
     if dates is not None:
         # Align dates with predictions
-        dates = dates[-len(y_true):]
-        plt.plot(dates, y_true, label='Actual', linewidth=2, alpha=0.8)
-        plt.plot(dates, y_pred, label='Predicted', linewidth=2, alpha=0.8)
-        plt.xlabel('Date')
+        dates = dates[-len(y_true) :]
+        plt.plot(dates, y_true, label="Actual", linewidth=2, alpha=0.8)
+        plt.plot(dates, y_pred, label="Predicted", linewidth=2, alpha=0.8)
+        plt.xlabel("Date")
         plt.xticks(rotation=45)
     else:
-        plt.plot(y_true, label='Actual', linewidth=2, alpha=0.8)
-        plt.plot(y_pred, label='Predicted', linewidth=2, alpha=0.8)
-        plt.xlabel('Samples')
-    
-    plt.ylabel('Price (USD)')
-    plt.title(title, fontsize=16, fontweight='bold')
+        plt.plot(y_true, label="Actual", linewidth=2, alpha=0.8)
+        plt.plot(y_pred, label="Predicted", linewidth=2, alpha=0.8)
+        plt.xlabel("Samples")
+
+    plt.ylabel("Price (USD)")
+    plt.title(title, fontsize=16, fontweight="bold")
     plt.legend(fontsize=12)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Plot saved to {save_path}")
 
     plt.show(block=False)
@@ -126,121 +124,126 @@ def plot_training_history(history, save_path: str = None):
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     # Handle both Keras History and dict
-    if hasattr(history, 'history'):
+    if hasattr(history, "history"):
         hist = history.history
     else:
         hist = history
 
     # Loss plot
-    axes[0].plot(hist['loss'], label='Training Loss', linewidth=2)
-    if 'val_loss' in hist and hist['val_loss']:
-        axes[0].plot(hist['val_loss'], label='Validation Loss', linewidth=2)
-    axes[0].set_xlabel('Epoch')
-    axes[0].set_ylabel('Loss (MSE)')
-    axes[0].set_title('Training & Validation Loss')
+    axes[0].plot(hist["loss"], label="Training Loss", linewidth=2)
+    if "val_loss" in hist and hist["val_loss"]:
+        axes[0].plot(hist["val_loss"], label="Validation Loss", linewidth=2)
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Loss (MSE)")
+    axes[0].set_title("Training & Validation Loss")
     axes[0].legend()
     axes[0].grid(True, alpha=0.3)
 
     # MAE plot
-    if 'mae' in hist and hist['mae']:
-        axes[1].plot(hist['mae'], label='Training MAE', linewidth=2)
-        if 'val_mae' in hist and hist['val_mae']:
-            axes[1].plot(hist['val_mae'], label='Validation MAE', linewidth=2)
-        axes[1].set_xlabel('Epoch')
-        axes[1].set_ylabel('MAE')
-        axes[1].set_title('Training & Validation MAE')
+    if "mae" in hist and hist["mae"]:
+        axes[1].plot(hist["mae"], label="Training MAE", linewidth=2)
+        if "val_mae" in hist and hist["val_mae"]:
+            axes[1].plot(hist["val_mae"], label="Validation MAE", linewidth=2)
+        axes[1].set_xlabel("Epoch")
+        axes[1].set_ylabel("MAE")
+        axes[1].set_title("Training & Validation MAE")
         axes[1].legend()
     axes[1].grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
-    
+
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Training history plot saved to {save_path}")
 
     plt.show()
 
 
-def plot_error_distribution(y_true: np.ndarray, y_pred: np.ndarray, save_path: str = None):
+def plot_error_distribution(
+    y_true: np.ndarray, y_pred: np.ndarray, save_path: str = None
+):
     """
     Plot distribution of prediction errors.
-    
+
     Args:
         y_true: True values
         y_pred: Predicted values
         save_path: Path to save the plot
     """
     errors = y_true - y_pred
-    
+
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
+
     # Histogram
-    axes[0].hist(errors, bins=50, edgecolor='black', alpha=0.7)
-    axes[0].set_xlabel('Prediction Error')
-    axes[0].set_ylabel('Frequency')
-    axes[0].set_title('Error Distribution')
-    axes[0].axvline(x=0, color='r', linestyle='--', linewidth=2)
+    axes[0].hist(errors, bins=50, edgecolor="black", alpha=0.7)
+    axes[0].set_xlabel("Prediction Error")
+    axes[0].set_ylabel("Frequency")
+    axes[0].set_title("Error Distribution")
+    axes[0].axvline(x=0, color="r", linestyle="--", linewidth=2)
     axes[0].grid(True, alpha=0.3)
-    
+
     # Scatter plot: Actual vs Predicted
-    axes[1].scatter(y_true, y_pred, alpha=0.5, edgecolors='none')
+    axes[1].scatter(y_true, y_pred, alpha=0.5, edgecolors="none")
     min_val = min(y_true.min(), y_pred.min())
     max_val = max(y_true.max(), y_pred.max())
-    axes[1].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect Prediction')
-    axes[1].set_xlabel('Actual Price')
-    axes[1].set_ylabel('Predicted Price')
-    axes[1].set_title('Actual vs Predicted')
+    axes[1].plot(
+        [min_val, max_val],
+        [min_val, max_val],
+        "r--",
+        linewidth=2,
+        label="Perfect Prediction",
+    )
+    axes[1].set_xlabel("Actual Price")
+    axes[1].set_ylabel("Predicted Price")
+    axes[1].set_title("Actual vs Predicted")
     axes[1].legend()
     axes[1].grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
-    
+
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Error distribution plot saved to {save_path}")
 
     plt.show()
 
 
-def compare_models(
-    models_metrics: Dict[str, Dict[str, float]],
-    save_path: str = None
-):
+def compare_models(models_metrics: Dict[str, Dict[str, float]], save_path: str = None):
     """
     Compare multiple models using a bar chart.
-    
+
     Args:
         models_metrics: Dictionary of {model_name: metrics_dict}
         save_path: Path to save the plot
     """
-    metrics_to_compare = ['MAE', 'RMSE', 'MAPE', 'R²']
+    metrics_to_compare = ["MAE", "RMSE", "MAPE", "R²"]
     model_names = list(models_metrics.keys())
-    
+
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     axes = axes.flatten()
-    
+
     for i, metric in enumerate(metrics_to_compare):
         values = [models_metrics[model].get(metric, 0) for model in model_names]
-        bars = axes[i].bar(model_names, values, alpha=0.7, edgecolor='black')
-        axes[i].set_title(f'{metric} Comparison')
+        bars = axes[i].bar(model_names, values, alpha=0.7, edgecolor="black")
+        axes[i].set_title(f"{metric} Comparison")
         axes[i].set_ylabel(metric)
-        axes[i].grid(True, alpha=0.3, axis='y')
-        
+        axes[i].grid(True, alpha=0.3, axis="y")
+
         # Add value labels on bars
         for bar, value in zip(bars, values):
             axes[i].text(
-                bar.get_x() + bar.get_width()/2.,
+                bar.get_x() + bar.get_width() / 2.0,
                 bar.get_height(),
-                f'{value:.4f}',
-                ha='center',
-                va='bottom',
-                fontsize=9
+                f"{value:.4f}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
             )
-    
+
     plt.tight_layout()
-    
+
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Model comparison plot saved to {save_path}")
 
     plt.show()
@@ -252,7 +255,7 @@ def evaluate_model(
     y_test_scaled: np.ndarray,
     target_scaler,
     test_dates: pd.DatetimeIndex = None,
-    output_dir: str = 'results'
+    output_dir: str = "results",
 ) -> Dict[str, float]:
     """
     Complete model evaluation pipeline (PyTorch compatible).
@@ -273,42 +276,45 @@ def evaluate_model(
     # Make predictions (PyTorch)
     print("Making predictions on test set...")
     from lstm_model import predict as torch_predict
+
     y_pred_scaled = torch_predict(model, X_test)
-    
+
     # Inverse transform to original scale
     y_test = target_scaler.inverse_transform(y_test_scaled.reshape(-1, 1)).ravel()
     y_pred = target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).ravel()
-    
+
     # Calculate metrics
     metrics = calculate_metrics(y_test, y_pred)
     print_metrics(metrics, "LSTM Model Performance on Test Set")
-    
+
     # Plot predictions
     plot_predictions(
-        y_test, y_pred,
+        y_test,
+        y_pred,
         dates=test_dates,
         title="Gold Price: LSTM Prediction vs Actual",
-        save_path=os.path.join(output_dir, 'predictions_vs_actual.png')
+        save_path=os.path.join(output_dir, "predictions_vs_actual.png"),
     )
-    
+
     # Plot error distribution
     plot_error_distribution(
-        y_test, y_pred,
-        save_path=os.path.join(output_dir, 'error_distribution.png')
+        y_test, y_pred, save_path=os.path.join(output_dir, "error_distribution.png")
     )
-    
+
     # Save predictions to CSV
-    predictions_df = pd.DataFrame({
-        'Actual': y_test,
-        'Predicted': y_pred,
-        'Error': y_test - y_pred,
-        'Error_%': ((y_test - y_pred) / y_test) * 100
-    })
-    
+    predictions_df = pd.DataFrame(
+        {
+            "Actual": y_test,
+            "Predicted": y_pred,
+            "Error": y_test - y_pred,
+            "Error_%": ((y_test - y_pred) / y_test) * 100,
+        }
+    )
+
     if test_dates is not None:
-        predictions_df.index = test_dates[-len(predictions_df):]
-    
-    predictions_df.to_csv(os.path.join(output_dir, 'predictions.csv'))
+        predictions_df.index = test_dates[-len(predictions_df) :]
+
+    predictions_df.to_csv(os.path.join(output_dir, "predictions.csv"))
     print(f"Predictions saved to {os.path.join(output_dir, 'predictions.csv')}")
-    
+
     return metrics, y_test, y_pred
