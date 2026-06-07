@@ -5,9 +5,8 @@ Evaluation and visualization module for gold price prediction.
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from typing import Dict, Tuple
+from typing import Dict
 import os
 
 

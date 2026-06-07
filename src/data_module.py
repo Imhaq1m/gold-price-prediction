@@ -3,7 +3,6 @@ Data collection and preprocessing module for gold price prediction.
 """
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from typing import Optional
 
 

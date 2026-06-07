@@ -202,7 +202,7 @@ def main():
         pred_date = result["predicted_date"]
         pred_date = pred_date.date() if hasattr(pred_date, "date") else pred_date
         print(f"\n{'=' * 60}")
-        print(f"PREDICTION FOR NEXT TRADING DAY")
+        print("PREDICTION FOR NEXT TRADING DAY")
         print(f"{'=' * 60}")
         print(f"  Last trading day : {last_date} ({last_date.strftime('%A')})")
         print(f"  Predicted for    : {pred_date} ({pred_date.strftime('%A')})")

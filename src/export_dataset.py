@@ -30,9 +30,9 @@ def export_raw_data():
     else:
         print(f"Columns: {', '.join(gold_data.columns.astype(str))}")
 
-    print(f"\nFirst 5 rows:")
+    print("\nFirst 5 rows:")
     print(gold_data.head())
-    print(f"\nLast 5 rows:")
+    print("\nLast 5 rows:")
     print(gold_data.tail())
 
     return filename
@@ -53,7 +53,7 @@ def export_processed_data():
     print(f"\nSaved to: {filename}")
     print(f"Shape: {clean_data.shape}")
     print(f"Date range: {clean_data.index[0]} to {clean_data.index[-1]}")
-    print(f"\nFirst 5 rows:")
+    print("\nFirst 5 rows:")
     print(clean_data.head())
 
     return filename
@@ -76,10 +76,10 @@ def export_featured_data():
     print(f"Shape: {featured_data.shape}")
     print(f"Date range: {featured_data.index[0]} to {featured_data.index[-1]}")
     print(f"Number of features: {featured_data.shape[1]}")
-    print(f"\nColumns:")
+    print("\nColumns:")
     for i, col in enumerate(featured_data.columns, 1):
         print(f"  {i}. {col}")
-    print(f"\nFirst 5 rows:")
+    print("\nFirst 5 rows:")
     print(featured_data.head())
 
     return filename
@@ -105,9 +105,9 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("✅ EXPORT COMPLETE")
     print("=" * 60)
-    print(f"\nFiles created:")
+    print("\nFiles created:")
     print(f"  1. {file1}")
     print(f"  2. {file2}")
     print(f"  3. {file3}")
-    print(f"\nYou can now send these files to your lecturer.")
+    print("\nYou can now send these files to your lecturer.")
     print("Recommended: GLD_with_features.csv (most complete dataset)")
