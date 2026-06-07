@@ -7,6 +7,7 @@ Provides:
 
 Run with:  py -m flask run
    or:     py app.py
+   or:     py app.py --ngrok  (public tunnel via ngrok)
 """
 
 import datetime
@@ -211,4 +212,21 @@ def predict():
 load_artifacts()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    import sys
+
+    ngrok_tunnel = None
+    if "--ngrok" in sys.argv:
+        from pyngrok import ngrok
+
+        ngrok.kill()
+        ngrok_tunnel = ngrok.connect(5000)
+        print(f"\nPublic URL (share this): {ngrok_tunnel.public_url}\n")
+
+    try:
+        app.run(debug=ngrok_tunnel is None)
+    finally:
+        if ngrok_tunnel is not None:
+            from pyngrok import ngrok
+
+            ngrok.disconnect(ngrok_tunnel.public_url)
+            ngrok.kill()

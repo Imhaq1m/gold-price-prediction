@@ -22,6 +22,7 @@ py -m src.predict_future --model models/cv_fold_3.pt   # single model
 ### Web Dashboard
 ```bash
 py app.py                                  # Flask dashboard → http://127.0.0.1:5000
+
 ```
 
 ### Lint (ruff)
