@@ -15,9 +15,6 @@ project/
 │   ├── evaluation.py             # Metrics (MAE, RMSE, R²) & visualizations
 │   ├── export_dataset.py         # Dataset export utility
 │   └── __init__.py
-├── app.py                        # Flask web dashboard (optional)
-├── templates/                    # Flask HTML templates
-├── static/                       # Flask CSS
 ├── notebooks/
 │   └── gold_prediction_colab.ipynb  # Google Colab variant
 ├── data/                         # Raw & processed CSV datasets
@@ -73,15 +70,6 @@ Use a specific CV fold:
 py -m src.predict_future --model models/cv_fold_3.pt
 ```
 
-### 3. Web Dashboard
-
-```bash
-py app.py
-# → http://127.0.0.1:5000
-```
-
-Shows live prediction, 30-day forecast chart, and model info.
-
 ---
 
 ## Model Architecture
@@ -127,21 +115,12 @@ Input (30 days × 31 features)
 | **Lag** | Close/returns at t-1, t-2, t-3, t-5, t-10 |
 | **Cyclical** | Day of week, month, quarter |
 
-## API (Flask Dashboard)
-
-| Endpoint | Returns |
-|---|---|
-| `GET /` | HTML dashboard |
-| `GET /api/predict` | JSON: `{last_close, predicted_price, return_pct, bias_correction}` |
-| `GET /api/predict/30` | JSON: includes `forecast: [{day, date, return_pct, price}]` |
-
 ## Requirements
 
 - Python 3.8+
 - PyTorch 2.0+
 - yfinance, scikit-learn, pandas, numpy
 - matplotlib, seaborn
-- flask (optional, for dashboard)
 
 ## Research Basis
 
@@ -151,4 +130,4 @@ This project implements LSTM-Attention architectures from financial time series 
 
 - The model predicts **returns**, not raw prices — returns are stationary, prices are not
 - Multi-day predictions beyond 5 days are illustrative; error compounds recursively
-- The Flask dashboard is optional — the project works entirely from the command line
+
