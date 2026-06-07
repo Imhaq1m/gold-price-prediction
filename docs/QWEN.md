@@ -1,103 +1,127 @@
-# Gold Price Prediction using LSTM-Attention (PyTorch) - Project Context
+# Gold Price Prediction using LSTM-Attention (PyTorch) — Project Context
 
 ## Project Overview
 
-This is an advanced undergraduate-level Machine Learning project for predicting gold market prices using a hybrid **LSTM-Attention** neural network. The project implements a complete ML pipeline from data collection to model evaluation, utilizing **PyTorch** and Walk-Forward Cross Validation for robust performance.
+Advanced undergraduate ML project for predicting gold market prices using a hybrid **LSTM-Attention** neural network. Implements a complete pipeline from data collection to model evaluation, plus an **interactive Flask web dashboard**.
 
-**Purpose**: Predict next-day gold returns using historical GLD ETF data, engineered technical indicators, and a stationary target variable to avoid covariate shift across price regimes.
+**Purpose**: Predict next-day gold returns using historical GLD ETF data, engineered technical indicators, and a stationary target variable to avoid covariate shift.
 
 **Main Technologies**:
-- **Python 3.8+** as the programming language
-- **PyTorch** for LSTM-Attention neural network implementation
-- **yfinance** for fetching financial market data
+- **Python 3.8+**
+- **PyTorch** for LSTM-Attention
+- **yfinance** for financial market data
+- **Flask** for web dashboard
+- **Chart.js** for interactive frontend charting
 - **pandas/numpy** for data manipulation
-- **scikit-learn** for preprocessing (MinMaxScaler) and metrics
-- **matplotlib/seaborn** for visualization
+- **scikit-learn** for preprocessing and metrics
+- **matplotlib/seaborn** for static visualizations
 
 ## Project Structure
 
 ```
 project/
-├── main.py                    # Main orchestrator script (entry point)
-├── data_module.py             # Data collection from yfinance & preprocessing
-├── feature_engineering.py     # Technical indicators & sequence creation
-├── lstm_model.py              # LSTM-Attention model architecture & training
-├── evaluation.py              # Metrics calculation & visualization
-├── pipeline.txt               # Detailed technical documentation
-├── requirements.txt           # Python dependencies
-├── QWEN.md                    # This file - project context
-├── README.md                  # User-facing documentation
-├── docs/                      # Supplementary documentation
-├── logs/                      # Historical execution logs
-├── models/                    # Saved trained models (created at runtime)
-└── results/                   # Output plots & predictions (created at runtime)
+├── src/                         # Python source package
+│   ├── __init__.py
+│   ├── main.py                  # Pipeline orchestrator (entry point)
+│   ├── predict_future.py        # CLI inference (direct multi-step, H=30)
+│   ├── data_module.py           # yfinance fetch & preprocessing
+│   ├── feature_engineering.py   # 31 technical indicators, sequences, scaling
+│   ├── lstm_model.py            # PyTorch models (LSTMAttentionModel, StackedLSTM, SimpleLSTM)
+│   ├── evaluation.py            # Metrics + matplotlib/seaborn plots
+│   └── export_dataset.py        # CSV dataset export for sharing
+├── templates/                   # Flask HTML template
+│   └── index.html               # Chart.js dark-themed dashboard
+├── app.py                       # Flask web application
+├── docs/                        # Documentation
+│   ├── README.md                # User-facing docs
+│   ├── QUICKSTART.md            # Quick commands
+│   ├── QWEN.md                  # This file — project context
+│   ├── pipeline.txt             # Detailed technical pipeline
+│   └── TESTING_REPORT.md        # Testing results
+├── data/                        # Raw & processed CSV datasets
+├── models/                      # .pt checkpoints, .pkl scalers, bias_correction.txt
+├── results/                     # predictions.csv, .png plots
+├── logs/                        # Run logs (gitignored)
+├── requirements.txt
+└── .gitignore
 ```
 
 ## Module Descriptions
 
-### `main.py` - Pipeline Orchestrator
-The main entry point that runs the complete pipeline:
-1. Data collection (GLD ETF from Yahoo Finance, 2015-present)
-2. Preprocessing (forward/backward fill for missing values, chronological sort, deduplication)
-3. Feature engineering (31 technical indicators across trend, momentum, volatility, lag, cyclical categories)
-4. Target definition (Convert prices to stationary returns: `(P_{t+1} / P_t) - 1`)
-5. **Walk-Forward Cross Validation** (5 folds, expanding window starting at 70% of data)
-6. Feature scaling (MinMaxScaler fit on train, applied to test to prevent leakage)
-7. Sequence creation (**30-day sliding windows** → shape `(samples, 30, 31)`)
-8. Model building (LSTM-Attention: LSTM(50) → MultiHeadAttention(4 heads) → LayerNorm+Residual → Dropout(0.2) → Dense(1))
-9. Training (Adam optimizer, MSE loss, early stopping patience=15, ReduceLROnPlateau, gradient clipping max_norm=1.0)
-10. Fold selection (best R² across 5 folds)
-11. Returns-to-price conversion: `Predicted_Price = Previous_Close * (1 + Predicted_Return)`
-12. **Bias Correction** (post-processing shift by mean error)
-13. Evaluation (R², MAE, RMSE, MAPE, Directional Accuracy) and visualization generation
+### `main.py` — Pipeline Orchestrator
+Entry point for the full pipeline:
+1. Data collection (GLD ETF, 2015–present)
+2. Preprocessing (ffill/bfill, sort, deduplicate)
+3. Feature engineering (31 indicators: trend, momentum, volatility, lags, cyclical)
+4. Target definition: `returns = (P_{t+1} / P_t) - 1` (stationary)
+5. **Walk-Forward Cross Validation** (5 folds, expanding from 70%)
+6. Feature scaling (MinMaxScaler fit on train only)
+7. Sequence creation (30-day sliding windows → `(samples, 30, 31)`)
+8. Model: LSTM(50) → MultiHeadAttention(4 heads) → LayerNorm → Dense(H=30)
+9. Training: Adam, MSE loss, early stopping (patience=15), ReduceLROnPlateau
+10. Select best fold by R²
+11. Retrain on all data → save `best_lstm_attention.pt`
+12. Evaluate, generate plots, save artifacts
 
-### `data_module.py` - Data Collection
-- **`fetch_gold_data()`**: Fetches GLD ETF data via yfinance (OHLCV, dividends, splits)
-- **`preprocess_data()`**: Handles missing values (ffill → bfill), enforces chronological order, deduplicates timestamps, sets DatetimeIndex
-- **`split_data()`**: Time-based train/test split (default 95/5 for final evaluation)
+### `data_module.py` — Data Collection
+- `fetch_gold_data()`: Fetches GLD via yfinance (OHLCV)
+- `preprocess_data()`: ffill/bfill NaN, enforce chronology, deduplicate
+- `split_data()`: Time-based train/test split
 
-### `feature_engineering.py` - Feature Creation
-- **`add_technical_indicators()`**: Creates **31 features** across 5 categories:
-  - **Trend**: SMA(10/20/50), EMA(10/20), crossovers
-  - **Momentum**: RSI(14), MACD, MACD Signal, MACD Histogram
-  - **Volatility**: Bollinger Bands (width, position), rolling std dev
-  - **Price Action**: Log returns, high-low range, open-close range
-  - **Lag Features**: Close/Returns at t-1, t-2, t-3, t-5, t-10
-  - **Cyclical**: Day of week, month, quarter
-- **`prepare_features()`**: Selects and orders feature columns
-- **`create_sequences()`**: Converts tabular data to 3D tensors `(samples, seq_len=30, features=31)` for LSTM input
-- **`scale_data()`**: MinMaxScaler normalization to [0, 1]; fit on train, transform on both train and test
+### `feature_engineering.py` — Feature Creation
+- `add_technical_indicators()`: 31 features (SMA, EMA, RSI, MACD, Bollinger, lags, rolling stats, cyclical)
+- `prepare_features()`: Select and order feature columns
+- `create_sequences()`: Tabular → 3D tensors `(samples, 30, 31)` for LSTM
+- `scale_data()`: MinMaxScaler [0,1]; fit on train, transform both
 
-### `lstm_model.py` - Neural Network
-- **`LSTMAttentionModel`**: Primary architecture
-  ```
-  Input: (batch, 30, 31)
-    ↓
-  LSTM(input=31, hidden=50, batch_first=True)
-    → Output: (batch, 30, 50), Dropout(0.2)
-    ↓
-  MultiheadAttention(embed_dim=50, num_heads=4, batch_first=True)
-    → Attention: softmax(QK^T / sqrt(d_k)) @ V
-    → Residual: attn_out + lstm_out
-    → LayerNorm(hidden=50), Dropout(0.2)
-    ↓
-  Temporal Pooling: attn_out[:, -1, :] → (batch, 50)
-    ↓
-  Linear(50 → 1) → squeeze() → (batch,)
-  ```
-- **`StackedLSTM`**: Alternative baseline (3-layer LSTM: 128→64→32 with batch norm)
-- **`SimpleLSTM`**: Lightweight variant (LSTM(50) → Dropout → Dense)
-- **`MultiHeadAttention`**: Custom standalone implementation (not used in current pipeline; PyTorch built-in `nn.MultiheadAttention` is used instead)
-- **`train_model()`**: Full training loop with Adam optimizer, MSE loss, early stopping, ReduceLROnPlateau scheduler, gradient clipping, and model checkpointing
-- **`predict()`**: Inference function; returns numpy array of predictions
+### `lstm_model.py` — Neural Network
+- **`LSTMAttentionModel`** (primary):
+```
+Input: (batch, 30, 31)
+  → LSTM(31→50, batch_first) → Dropout(0.2)
+    → MultiheadAttention(embed_dim=50, heads=4, batch_first)
+      → Residual + LayerNorm → Dropout(0.2)
+        → attn_out[:, -1, :]  (temporal pooling)
+          → Linear(50 → H=30)  (direct multi-step output)
+```
+- **`StackedLSTM`**: 3-layer LSTM (128→64→32) with BatchNorm, Dropout, FC head
+- **`SimpleLSTM`**: LSTM(50) → Dropout → Linear
+- **`train_model()`**: Full training loop with early stopping, checkpointing, LR scheduling
+- **`predict()`**: Inference wrapper (model.eval(), torch.no_grad())
+- **`load_cv_models()`**: Load all 5 CV fold checkpoints as ensemble
+- **`ensemble_predict()`**: Average predictions across ensemble
 
-### `evaluation.py` - Metrics & Visualization
-- **`calculate_metrics()`**: Computes MAE, RMSE, MAPE, R², Directional Accuracy
-- **`print_metrics()`**: Formatted console output for metrics
-- **`plot_predictions()`**: Time series overlay of actual vs predicted prices
-- **`plot_training_history()`**: Dual-axis plot of train/val loss and MAE across epochs
-- **`plot_error_distribution()`**: Histogram of prediction errors + scatter plot (actual vs predicted)
-- **`evaluate_model()`**: Orchestrates metric calculation and plot generation
+### `evaluation.py` — Metrics & Visualization
+- `calculate_metrics()`: MAE, RMSE, MAPE, R², Directional Accuracy
+- `print_metrics()`: Formatted console output
+- `plot_predictions()`: Actual vs predicted time series overlay
+- `plot_training_history()`: Loss + MAE curves
+- `plot_error_distribution()`: Error histogram + scatter plot
+- `evaluate_model()`: End-to-end evaluation pipeline
+
+### `predict_future.py` — CLI Inference
+- Single-day: ensemble predict → inverse transform → bias correct
+- Multi-day: direct multi-step (H=30) → cumulative product → bias correct
+- `load_cv_models()` / single checkpoint support
+
+### `export_dataset.py` — CSV Export
+- `export_raw_data()`: Raw OHLCV → `GLD_raw_data.csv`
+- `export_processed_data()`: Cleaned → `GLD_processed.csv`
+- `export_featured_data()`: Full 31-feature dataset → `GLD_with_features.csv`
+
+### `app.py` — Flask Web Dashboard
+Flask application with 2 routes:
+- **`GET /`**: Renders dark-themed Chart.js dashboard with:
+  - Historical GLD prices (last 3 months)
+  - Auto-run 7-day prediction (ensemble of 5 models)
+  - Prediction details table
+- **`POST /predict`**: Accepts `{"days": N}`, returns `{"predictions": [...]}`
+
+Key logic:
+- Artifacts loaded once at startup (`load_artifacts()`)
+- Data cached for 1 hour (avoids yfinance rate limits)
+- Direct multi-step for returns → bootstrap noise from historical GLD returns for realistic variation
+- Bias correction applied once at end
 
 ## Building and Running
 
@@ -106,27 +130,27 @@ The main entry point that runs the complete pipeline:
 pip install -r requirements.txt
 ```
 
-### Running the Pipeline
+### Training
 ```bash
-py main.py
+py -m src.main
 ```
 
-This will:
-- Download ~11 years of GLD daily data (~2,800 trading days)
-- Engineer 31 technical features from OHLCV
-- Run **5-fold Walk-Forward Cross Validation** (expanding window)
-- Select best fold by R² score
-- Convert predicted returns to prices and apply **Bias Correction**
-- Generate evaluation plots in `results/`
-- Save trained model weights in `models/`
+### CLI Inference
+```bash
+py -m src.predict_future
+py -m src.predict_future --days 30
+```
 
-### Expected Output Files
-After running:
-- `results/predictions.csv` - Date-indexed DataFrame with Actual, Predicted, Error, Error_%
-- `results/predictions_vs_actual.png` - Time series visualization
-- `results/error_distribution.png` - Error histogram + scatter plot
-- `results/training_history.png` - Loss and MAE curves for best fold
-- `models/cv_fold_1.pt` through `cv_fold_5.pt` - Model checkpoints for each fold
+### Web Dashboard
+```bash
+py app.py
+# → http://127.0.0.1:5000
+```
+
+### Dataset Export
+```bash
+py -m src.export_dataset
+```
 
 ## Key Configuration Parameters
 
@@ -134,6 +158,7 @@ In `main.py`:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `SEQ_LENGTH` | 30 | Lookback window in days |
+| `FORECAST_HORIZON` | 30 | Direct multi-step horizon |
 | `n_splits` | 5 | Number of CV folds |
 | `epochs` | 50 | Max training epochs per fold |
 | `batch_size` | 32 | Batch size for DataLoader |
@@ -144,7 +169,7 @@ In `main.py`:
 In `lstm_model.py`:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `learning_rate` | 0.003 | Adam optimizer initial LR |
+| `learning_rate` | 0.003 | Adam initial LR |
 | `patience_es` | 15 | Early stopping patience |
 | `hidden_size` | 50 | LSTM hidden units |
 | `num_heads` | 4 | Attention heads |
@@ -153,102 +178,95 @@ In `lstm_model.py`:
 ## Development Conventions
 
 ### Code Style
-- **Type hints**: Used throughout (e.g., `pd.DataFrame`, `np.ndarray`, `torch.Tensor`)
-- **Docstrings**: NumPy-style with Args/Returns sections
-- **Naming**: snake_case for functions/variables, CamelCase for classes
-- **Structure**: Modular design with single-responsibility functions; each pipeline step is isolated
+- Type hints throughout
+- NumPy-style docstrings
+- snake_case functions/variables, CamelCase classes
+- Modular design, single-responsibility functions
 
 ### Data Flow
 ```
-Raw OHLCV → Preprocessing → Feature Engineering (31 features)
-  → Returns Calculation → MinMaxScaler → Sequence Creation (30-day windows)
-    → LSTM-Attention → Predicted Returns → Inverse Transform → Price Conversion
+Raw OHLCV → Preprocessing → 31 Features → Returns Target
+  → MinMaxScaler → Sequences (30, 31) → LSTM-Attention
+    → Predicted Returns → Inverse Transform → Price Conversion
       → Bias Correction → Metrics & Visualization
 ```
 
-Key design principles:
-- Scalers are fit on train only and applied to test (prevents data leakage)
-- Sequences include context from training data to ensure smooth transitions
-- All transformations are reversible (scalers preserved for inverse_transform)
-
-### Error Handling
-- Warnings suppressed (`warnings.filterwarnings('ignore')`) for cleaner output
-- Missing values handled via forward fill → backward fill
-- NaN rows dropped after rolling window calculations in feature engineering
-- Gradient clipping (`max_norm=1.0`) prevents exploding gradients in LSTM backprop
+### Flask Data Flow
+```
+GET / : yfinance → preprocess → features → ensemble predict (7-day)
+  → render_template with JSON-embedded data
+POST /predict : yfinance (cached) → features → direct multi-step
+  → bootstrap noise → cumulative price → bias correct → JSON
+```
 
 ## Architecture Decisions
 
-### Why LSTM-Attention over alternatives?
-- **LSTM vs vanilla RNN**: LSTMs solve vanishing gradient problem via gating mechanisms (forget, input, output gates) and cell state, enabling learning of long-range dependencies in financial time series.
-- **Attention vs LSTM-only**: Standard LSTM treats all time steps through sequential hidden state updates. Self-attention computes pairwise relationships across all 30 positions, allowing the model to dynamically weigh important days (e.g., price shocks, volume spikes) rather than relying solely on recency bias.
-- **Multi-head (4 heads)**: Each head learns a different representation subspace, similar to diverse filters in CNNs. This enables parallel learning of short-term shocks, medium-term momentum, and long-term regime stability.
-- **Residual connections**: Enable gradient flow through the attention layer and allow the model to fall back to LSTM representation if attention is uninformative for a given input.
+### Why LSTM-Attention?
+- LSTM solves vanishing gradients via gating mechanisms
+- Self-attention computes pairwise relationships across all 30 positions
+- 4 heads learn diverse patterns (momentum, volatility, shocks, regimes)
+- Residual connections preserve gradient flow
 
 ### Why 30-day sequences?
-- Represents ~1.5 months of trading data, capturing short-term momentum and mean-reversion patterns.
-- Balances contextual information with computational efficiency (longer sequences increase memory quadratically for attention).
-- Standard in financial time series literature for daily prediction horizons.
+- ~1.5 months of trading context
+- Balances context with O(n²) attention complexity
+- Standard in financial time series literature
 
-### Why Returns Prediction (not Price)?
-- **Stationarity**: Price series are non-stationary (unit root, trending mean/variance). Returns are approximately stationary with mean ~0 and bounded variance, satisfying assumptions of most ML models.
-- **Avoids covariate shift**: Gold moved from ~$1,000 (2015) to ~$2,300 (2024). A model trained on absolute prices learns price levels specific to the training period and fails to generalize.
-- **Aligned with trading practice**: Quantitative strategies operate on % returns, not absolute levels.
+### Why Returns (not Price)?
+- Stationarity: returns have constant mean/variance
+- Avoids covariate shift: gold moved from ~$1,000 to ~$2,300+
+- Aligned with trading practice (% returns)
 
 ### Why Walk-Forward Validation?
-- **No look-ahead bias**: Each fold only uses data available up to that point in time, simulating real deployment.
-- **Expanding window**: Leverages all available historical data for training while maintaining temporal integrity.
-- **Robust performance estimate**: 5 folds provide distribution of metrics across different market regimes (bull, bear, sideways).
+- No look-ahead bias
+- Simulates real deployment
+- 5 folds = performance distribution across market regimes
+
+### Why Direct Multi-Step (H=30)?
+- One forward pass for all 30 future returns
+- Avoids error compounding of recursive approaches
+- Loss optimized jointly across all horizons
+
+### Why Bootstrap Noise?
+- Model only predicts positive returns (gold trends up)
+- Adding residuals from historical returns creates realistic up/down days
+- Preserves model's expected drift while adding realistic volatility
 
 ## Common Extension Points
 
-1. **Add more features** (edit `feature_engineering.py`):
-   - External macro data (DXY, Treasury yields, inflation expectations)
-   - Alternative data (sentiment from news, search trends)
-   - Additional technical indicators (Stochastic, ADX, ATR)
+1. **More features** (edit `feature_engineering.py`):
+   - DXY, interest rates, VIX
+   - Sentiment from news
 
-2. **Change model architecture** (edit `lstm_model.py`):
-   - Bidirectional LSTM (captures patterns from both directions, though causality is a concern for time series)
-   - GRU layers (fewer parameters, faster training)
-   - Transformer encoder (replace LSTM entirely with positional encoding + multi-head attention)
-   - Add more attention heads or increase hidden dimensions
+2. **Model changes** (edit `lstm_model.py`):
+   - Bidirectional LSTM
+   - GRU layers
+   - Full Transformer encoder
 
-3. **Different validation schemes** (edit `main.py`):
-   - Adjust `n_splits` for more/fewer folds
-   - Switch to sliding window (constant train size) instead of expanding window
-   - Add purged cross-validation to handle overlapping sequences
+3. **Validation** (edit `main.py`):
+   - Adjust n_splits
+   - Sliding window instead of expanding
 
-4. **Compare models** (edit `evaluation.py` or add new modules):
-   - Statistical baselines: ARIMA, GARCH
-   - Tree-based: XGBoost, LightGBM with lag features
-   - Temporal: Prophet, N-BEATS, Temporal Fusion Transformer
-
-## Troubleshooting Notes
-
-- **PyTorch Warnings**: "UserWarning: Named tensors..." is a known issue with certain PyTorch versions and can be safely ignored in this context.
-- **Long training time**: Reduce `epochs` (e.g., 30), `n_splits` (e.g., 3), or `batch_size` for faster iteration during development.
-- **Poor predictions**: Verify that Bias Correction is active; without it, systematic overprediction (~$10) degrades visual alignment. Also check that scalers are fit on train only.
-- **Memory issues**: Reduce `batch_size` or `SEQ_LENGTH`. Attention complexity is O(n²) in sequence length.
-- **Overfitting**: Increase dropout rate, reduce hidden units, or add L2 regularization (weight_decay in Adam optimizer).
-- **Model not converging**: Check learning rate (try 0.001), verify data is properly scaled [0, 1], and ensure no NaN values in sequences.
+4. **Dashboard** (edit `app.py` + `templates/index.html`):
+   - Add confidence bands
+   - Multi-scenario Monte Carlo paths
+   - Model comparison charts
 
 ## Research Context
 
-This project implements an approach found in recent financial time series prediction literature (2020-2024):
-- **LSTM-Attention combined architecture**: Superior to LSTM-only or Attention-only baselines in multiple studies.
-- **Technical analysis feature engineering**: 31 features encoding market structure (trend, momentum, volatility, seasonality).
-- **Walk-Forward Cross Validation**: Standard in quantitative finance for robust out-of-sample evaluation.
-- **Returns-based prediction**: Stationary target avoids covariate shift and aligns with trading practice.
-- **Post-processing bias correction**: Addresses systematic prediction bias observed in neural network outputs.
+- **LSTM-Attention** architecture: superior to LSTM-only or Attention-only baselines in recent literature
+- **31 technical features**: comprehensive market structure encoding
+- **Walk-Forward CV**: standard in quantitative finance
+- **Returns prediction**: stationary target, standard practice
+- **Bias correction**: post-processing for systematic neural network bias
 
 **Typical Performance**:
-- R² > 0.92 (raw predictions)
-- R² > 0.99 (after bias correction)
-- MAE ~$0.34-$14.46 (varies by fold and market regime)
+- R² > 0.92 (raw)
+- MAE ~$0.61
+- MAPE ~0.56%
 
 Suitable for:
 - Undergraduate/Graduate ML projects
-- Understanding PyTorch for Time Series
-- Financial prediction demonstrations
-- Quantitative finance research
-- Portfolio strategy prototyping
+- PyTorch time series demonstrations
+- Interactive financial prediction demos
+- Research paper replication

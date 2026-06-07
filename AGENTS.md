@@ -19,6 +19,11 @@ py -m src.predict_future --days 30        # multi-day (direct multi-step)
 py -m src.predict_future --model models/cv_fold_3.pt   # single model
 ```
 
+### Web Dashboard
+```bash
+py app.py                                  # Flask dashboard → http://127.0.0.1:5000
+```
+
 ### Lint (ruff)
 ```bash
 py -m ruff check .
@@ -34,6 +39,7 @@ py -m src.export_dataset
 - `src/main.py` — full pipeline (data → features → CV → retrain → evaluate → save)
 - `src/predict_future.py` — CLI inference tool
 - `src/export_dataset.py` — export CSV datasets for sharing
+- `app.py` — Flask web dashboard
 
 ### Note on `py` vs `python`
 Use `py` (not `python`) as the interpreter command. Run modules with `py -m <module>`. For modules inside `src/`, the working directory must be the project root so that `sys.path.insert(0, ...)` or relative imports resolve correctly.
@@ -53,6 +59,9 @@ project/
 │   ├── lstm_model.py            # PyTorch models (LSTMAttentionModel, StackedLSTM, SimpleLSTM)
 │   ├── evaluation.py            # Metrics + matplotlib/seaborn plots
 │   └── export_dataset.py        # CSV export for lecturer
+├── templates/                   # Flask HTML template
+│   └── index.html               # Chart.js dark-themed dashboard
+├── app.py                       # Flask web dashboard
 ├── docs/                        # README, QUICKSTART, TESTING_REPORT
 ├── data/                        # Raw & processed CSVs
 ├── models/                      # .pt checkpoints, .pkl scalers, bias_correction.txt

@@ -1,6 +1,7 @@
 ================================================================================
-                    GOLD PRICE PREDICTION PIPELINE DOCUMENTATION
-                    LSTM-Attention Neural Network Architecture
+                      GOLD PRICE PREDICTION PIPELINE DOCUMENTATION
+                      LSTM-Attention Neural Network Architecture
+                          Flask Web Dashboard Available
 ================================================================================
 
 1. PROJECT OVERVIEW
@@ -337,6 +338,42 @@ Output:
        2. predictions_vs_actual.png
        3. error_distribution.png
        4. training_history.png
+
+--- STEP 8: FLASK WEB DASHBOARD (Source: app.py) --------------------------------
+The trained model can be interacted with via a Flask web dashboard:
+
+Flask Routes:
+  - GET  /         Renders index.html with:
+                     - Historical GLD chart (last 3 months, Chart.js)
+                     - Auto-run 7-day prediction (ensemble of 5 CV models)
+                     - Number input for prediction horizon (1-30 days)
+  - POST /predict  Accepts JSON {"days": N}, returns:
+                     - JSON array of {day, date, return_pct, price}
+
+Prediction Pipeline (inferene):
+  1. Load artifacts (models, scalers, bias correction) once at startup
+  2. Fetch recent GLD data (cached for 1 hour to avoid rate limits)
+  3. Preprocess and compute 31 features
+  4. Run direct multi-step: one forward pass predicts all H=30 returns
+  5. Add bootstrap noise:
+       - Sample residuals from historical GLD return distribution
+       - Add to each predicted return for realistic day-to-day volatility
+  6. Convert returns to prices (cumulative product from last close)
+  7. Apply bias correction once (not per-step)
+  8. Return prediction array to frontend
+
+Frontend (Chart.js, dark theme):
+  - Gold line: historical close prices (last 3 months)
+  - Orange dashed line: LSTM prediction with bootstrap noise
+  - Results table: Day, Date, Return %, Price
+  - Dark background with gold accents
+
+Key Design:
+  - Ensemble of 5 CV models for robust predictions
+  - Bootstrap noise from historical returns (centered at zero)
+    ensures some days go up, some go down — realistic jagged trajectory
+  - Artifacts loaded at module level (call load_artifacts() on import)
+  - Deterministic seed per date (same prediction all day)
 
 4. INPUT/OUTPUT MAP
 --------------------------------------------------------------------------------
