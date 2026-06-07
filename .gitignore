@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Ruff cache
+.ruff_cache/
+
+# Project specific
+logs/
+*.log
+results/*.png
+results/*.csv
+models/*.pt
+models/*.h5
+models/*.pkl
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,436 @@
+================================================================================
+                    GOLD PRICE PREDICTION PIPELINE DOCUMENTATION
+                    LSTM-Attention Neural Network Architecture
+================================================================================
+
+1. PROJECT OVERVIEW
+--------------------------------------------------------------------------------
+This project predicts future Gold Prices (via GLD ETF) using a Deep Learning
+approach. The pipeline implements a research-grade architecture combining
+Long Short-Term Memory (LSTM) networks with Multi-Head Self-Attention mechanisms.
+
+Objective: Predict the next day's gold price based on historical market data
+           and technical indicators.
+Method:    Walk-Forward Cross Validation (Time-Series)
+Performance: R² > 0.99 (Bias Corrected)
+
+BEGINNER-FRIENDLY EXPLANATION:
+Think of this project as teaching a computer to predict gold prices the same
+way a professional trader would. We give it 11 years of gold market history,
+31 different market indicators (like trend, momentum, volatility), and a
+neural network that can "remember" patterns and "focus" on important events.
+The model learns from the past to predict the future.
+
+
+2. PIPELINE ARCHITECTURE
+--------------------------------------------------------------------------------
+
+   [Raw Data] -> [Preprocessing] -> [Feature Engineering] -> [Returns Calc]
+                                                         |
+   [Evaluation] <- [Bias Correction] <- [Prediction] <- [Sequence Creation]
+      ^                 ^                  ^                  ^
+      |                 |                  |                  |
+   [Plots]          [Metrics]        [Visuals]         [LSTM Model]
+   [CSV]                             [History]         [Training]
+
+
+3. KEY CONCEPTS EXPLAINED
+--------------------------------------------------------------------------------
+
+--- WHAT IS GLD AND WHY USE IT? ------------------------------------------------
+GLD (SPDR Gold Shares) is an ETF that tracks the gold spot price. It trades on
+major exchanges and provides OHLCV data, making it the standard proxy for gold
+in ML/quantitative finance research.
+
+Why GLD instead of raw gold spot prices:
+- Structured market data: OHLCV + volume reflects real trading behavior.
+- Easy data access: yfinance API provides clean daily data without paid APIs.
+- Includes market microstructure: Gaps, overnight moves, liquidity effects.
+- Reproducible: Anyone can fetch the same data for replication.
+
+--- CHRONOLOGICAL ORDER AND TEMPORAL INTEGRITY ----------------------------------
+Time series data must be sorted oldest-to-newest to preserve temporal
+dependencies. Violating this introduces two critical bugs:
+
+1. Data Leakage: If future data appears in training, the model "cheats" by
+   learning patterns that wouldn't exist at inference time. This inflates
+   metrics and causes catastrophic failure on unseen data.
+
+2. Rolling Window Calculations: Technical indicators (SMA, RSI, MACD) use
+   rolling windows. If day 100 appears before day 50, the rolling mean
+   computes on incorrect data, corrupting all downstream features.
+
+Our pipeline enforces chronological order explicitly, even though yfinance
+typically returns sorted data.
+
+--- FEATURE ENGINEERING: FROM RAW OHLCV TO MARKET SIGNALS ----------------------
+Raw OHLCV columns only provide point-in-time prices. Feature engineering
+transforms these into higher-level representations that capture market
+structure:
+
+1. Trend Features (SMA, EMA):
+   - SMA(10/20/50) and EMA(10/20) capture moving averages over different
+     windows. Crossovers (e.g., SMA10 > SMA50) signal trend changes.
+   - These give the model explicit trend context rather than forcing it to
+     learn from raw prices.
+
+2. Momentum Features (RSI, MACD):
+   - RSI(14): Normalized oscillator [0, 100] measuring overbought/oversold.
+   - MACD: Difference between fast and slow EMAs, plus signal line and
+     histogram. Captures momentum shifts before price reversals.
+
+3. Volatility Features (Bollinger Bands, Rolling Std):
+   - Bollinger Band width measures expansion/contraction of volatility.
+   - Rolling standard deviation quantifies local noise.
+   - These help the model distinguish stable regimes from turbulent ones.
+
+4. Lag Features:
+   - Explicit columns for Close/Returns at t-1, t-2, t-3, t-5, t-10.
+   - Provides the model with direct access to recent history without relying
+     solely on LSTM memory.
+
+5. Cyclical Features (Day of Week, Month, Quarter):
+   - Gold exhibits seasonality (e.g., year-end demand, Asian market hours).
+   - Cyclical encoding helps the model learn periodic patterns.
+
+Result: 5 raw columns → 31 features that encode trend, momentum, volatility,
+history, and seasonality.
+
+--- TARGET DEFINITION: WHY PREDICT RETURNS, NOT PRICES? ------------------------
+Financial price series are non-stationary: the mean and variance change over
+time. Gold moved from ~$1,000 (2015) to ~$2,300 (2024). A model trained on
+absolute prices will suffer from covariate shift — it learns price levels
+specific to the training period and fails to generalize.
+
+Returns are stationary:
+  target_return = (Close(t+1) / Close(t)) - 1
+
+Key properties:
+- Mean ~0, bounded variance (typically [-10%, +6%] for daily gold returns).
+- Distribution is stable across time periods (no trend component).
+- The model learns percentage changes, which are transferable regardless of
+  the absolute price level.
+
+At inference:
+  Predicted_Price = Previous_Close * (1 + Predicted_Return)
+
+This approach is standard in quantitative finance and aligns with how
+traders think about positions (% returns) rather than absolute levels.
+
+--- MULTI-HEAD SELF-ATTENTION: MECHANISM AND INTUITION -------------------------
+Self-attention computes relationships between all pairs of positions in the
+sequence. For our 30-day window, it learns which days are most predictive
+of the next day's return.
+
+MATHEMATICAL FORMULATION:
+For each attention head h:
+  Q_h = X * W_q_h    (Query projection)
+  K_h = X * W_k_h    (Key projection)
+  V_h = X * W_v_h    (Value projection)
+
+  Attention_h = softmax(Q_h @ K_h^T / sqrt(d_k)) @ V_h
+
+Where:
+- X: LSTM output, shape (batch, 30, 50)
+- d_k: Key dimension per head = 50 / 4 heads = 12.5 → adjusted to 50
+- Scaling factor sqrt(d_k) prevents vanishing gradients in softmax
+
+The 4 heads learn different representation subspaces:
+  Head 1 might attend to price shock events (large negative returns).
+  Head 2 might attend to volume anomalies (institutional activity).
+  Head 3 might attend to recent trend continuity (momentum).
+  Head 4 might attend to volatility regime changes.
+
+Outputs from all heads are concatenated and projected:
+  MultiHead(Q, K, V) = Concat(Head_1, ..., Head_4) * W_o
+
+RESIDUAL CONNECTION AND LAYER NORM:
+  Output = LayerNorm(MultiHead(Q, K, V) + X)
+
+The residual connection (X + attention output) solves two problems:
+1. Gradient flow: Gradients can skip through the residual path, preventing
+   vanishing gradients in deep networks.
+2. Identity preservation: The model can learn to "ignore" attention if it's
+   not useful for a particular input, falling back to the LSTM representation.
+
+WHY MULTI-HEAD OVER SINGLE ATTENTION:
+A single attention head can only learn one alignment strategy (e.g., "focus
+on recent days"). Multi-head attention learns diverse strategies in parallel,
+similar to how CNNs use multiple filters to detect different features (edges,
+textures, shapes). In financial time series, this allows the model to
+simultaneously track short-term shocks, medium-term trends, and long-term
+regime stability.
+
+
+4. DETAILED PIPELINE FLOW
+--------------------------------------------------------------------------------
+
+--- STEP 1: DATA EXTRACTION (Source: data_module.py) ---------------------------
+Input:
+  - Ticker: "GLD" (SPDR Gold Shares)
+  - Start Date: "2015-01-01"
+  - End Date: "Current Date"
+
+Process:
+  - Fetch daily financial data via yfinance (Yahoo Finance API).
+  - Extract columns: Open, High, Low, Close, Volume, Dividends, Splits.
+  - Ensure data covers ~11 years (approx. 2,800 trading days).
+
+Output:
+  - Raw DataFrame (Unprocessed OHLCV data).
+
+
+--- STEP 2: DATA PREPROCESSING (Source: data_module.py) ------------------------
+Input:
+  - Raw DataFrame from Step 1.
+
+Process:
+  - Clean: Handle missing values (NaN) using Forward Fill -> Backward Fill.
+  - Sort: Ensure data is chronologically ordered (oldest to newest).
+  - Deduplicate: Remove any duplicate timestamps.
+  - Index: Set 'Date' as the DataFrame index.
+
+Output:
+  - Clean DataFrame (Ready for analysis).
+
+
+--- STEP 3: FEATURE ENGINEERING (Source: feature_engineering.py) ---------------
+Input:
+  - Clean DataFrame (OHLCV).
+
+Process:
+  - Create 31 Technical Indicators to capture market dynamics:
+    1. Trend: SMA (10, 20, 50), EMA (10, 20), Crossovers.
+    2. Momentum: RSI (14), MACD, MACD Signal, MACD Histogram.
+    3. Volatility: Bollinger Bands (Width, Position), Rolling Std Dev.
+    4. Price Action: Log Returns, High-Low Range, Open-Close Range.
+    5. Lag Features: Close/Returns lagged by 1, 2, 3, 5, 10 days.
+    6. Time Features: Day of Week, Month, Quarter.
+  - Drop NaN rows resulting from rolling window calculations.
+
+Output:
+  - Feature DataFrame (31 Input Columns).
+
+
+--- STEP 4: TARGET DEFINITION (Source: main.py) --------------------------------
+Input:
+  - 'Close' price column from Feature DataFrame.
+
+Process:
+  - Convert non-stationary Price data into Stationary Return data.
+  - Formula: Target = (Close(t+1) / Close(t)) - 1
+  - This represents the percentage change expected for the next day.
+
+Output:
+  - Target Column: 'target_return' (Values typically between -10% and +6%).
+
+
+--- STEP 5: WALK-FORWARD CROSS VALIDATION (Source: main.py) --------------------
+Configuration:
+  - Folds: 5
+  - Initial Train: 70% of data.
+  - Window: Expanding (Train set grows by 1 fold each iteration).
+
+  [ Loop 1 to 5 ]:
+    |
+    |--- A. DATA SPLITTING
+    |     Process: Slice DataFrame into Train and Test sets based on time.
+    |
+    |--- B. FEATURE SCALING (Source: sklearn.preprocessing)
+    |     Process: Normalize all features and target to [0, 1] range.
+    |     Tool: MinMaxScaler (fitted on Train, transformed on Test).
+    |
+    |--- C. SEQUENCE CREATION (Source: feature_engineering.py)
+    |     Process: Convert tabular data to 3D sequences (Samples, Time, Features).
+    |     Config: Sequence Length = 30 days.
+    |     Output: X_train (Shape: ~2000, 30, 31), y_train (Shape: ~2000,).
+    |
+    |--- D. MODEL ARCHITECTURE (Source: lstm_model.py)
+    |     Architecture: LSTM-Attention Hybrid
+    |
+    |     Input shape: (batch_size, 30, 31)
+    |       - batch_size: 32 (configurable)
+    |       - seq_len: 30 days
+    |       - features: 31 technical indicators
+    |
+    |     Layer 1: LSTM(31 → 50 hidden units)
+    |       - Processes sequence step-by-step, maintaining hidden state h_t
+    |         and cell state c_t through gating mechanisms (forget, input,
+    |         output gates).
+    |       - Captures temporal dependencies: trends, momentum, regime shifts.
+    |       - Output: (batch, 30, 50) — hidden state at each time step.
+    |       - Followed by Dropout(0.2) for regularization.
+    |
+    |     Layer 2: Multi-Head Self-Attention(4 heads, embed_dim=50)
+    |       - Computes pairwise relationships between all 30 time steps.
+    |       - Each head learns a different alignment strategy via independent
+    |         Q, K, V projections.
+    |       - Attention scores: softmax(Q @ K^T / sqrt(d_k)) — measures how
+    |         much each time step should attend to every other step.
+    |       - Output: (batch, 30, 50) — contextually enriched representations.
+    |       - Residual connection: attn_output + lstm_output
+    |       - LayerNorm: Normalizes activations for training stability.
+    |
+    |     Layer 3: Temporal Pooling
+    |       - Takes output at the final time step: attn_out[:, -1, :]
+    |       - Shape: (batch, 50) — compressed representation of full context.
+    |
+    |     Layer 4: Dense(50 → 1)
+    |       - Linear projection to single scalar output.
+    |       - Output: predicted return (e.g., 0.008 = +0.8%).
+    |
+    |     WHY THIS ARCHITECTURE:
+    |       - LSTM captures sequential patterns (what traditional RNNs struggle
+    |         with due to vanishing gradients).
+    |       - Attention allows the model to weigh specific days differently
+    |         rather than treating all history equally.
+    |       - Residual connections prevent gradient degradation across layers.
+    |       - Dropout(0.2) at multiple points reduces overfitting on noisy
+    |         financial data.
+    |
+    |--- E. MODEL TRAINING
+    |     Config:
+    |       - Optimizer: Adam (Learning Rate: 0.003).
+    |       - Loss: MSE (Mean Squared Error).
+    |       - Callbacks: Early Stopping (Patience: 15 epochs), ReduceLROnPlateau.
+    |       - Epochs: Max 50 (usually stops early around 20-30).
+    |
+    |--- F. PREDICTION & METRICS
+    |     Process: Generate predictions on Test set (scaled returns).
+    |     Metrics: Calculate R², MAE, RMSE for this fold.
+    |
+    |--- G. SAVE MODEL
+    |     Output: Save model weights to 'models/cv_fold_X.pt'.
+
+
+--- STEP 6: FINAL EVALUATION & BIAS CORRECTION (Source: main.py) ---------------
+Input:
+  - Best Model (selected by highest R² from Step 5).
+  - Test Set Predictions (Scaled Returns).
+
+Process:
+  - A. Inverse Transform: Convert predicted returns from [0,1] scale back to %.
+  - B. Price Conversion: 
+       Formula: Predicted_Price = Previous_Close * (1 + Predicted_Return).
+  - C. Bias Correction:
+       Issue: Model tends to overpredict by ~$10 (Systematic Bias).
+       Fix: Calculate Mean_Error = Mean(Actual - Predicted).
+       Adjust: Final_Prediction = Raw_Prediction + Mean_Error.
+  - D. Final Metrics: Recalculate R², MAE, RMSE on corrected prices.
+
+Output:
+  - Corrected Predictions (Prices in USD).
+  - Final Metrics Report (e.g., R² ~0.99, MAE ~$0.34).
+
+
+--- STEP 7: VISUALIZATION & EXPORT (Source: evaluation.py) ---------------------
+Process:
+  - A. Time Series Plot: Overlay Actual vs. Predicted prices over time.
+  - B. Error Analysis:
+       1. Histogram of prediction errors (should be centered at 0).
+       2. Scatter plot of Actual vs. Predicted (should follow diagonal).
+  - C. Training History: Plot Loss and MAE curves for the best fold.
+
+Output:
+  - Files saved to 'results/':
+       1. predictions.csv (Date, Actual, Predicted, Error).
+       2. predictions_vs_actual.png
+       3. error_distribution.png
+       4. training_history.png
+
+4. INPUT/OUTPUT MAP
+--------------------------------------------------------------------------------
+[INPUTS]
+  - yfinance API (Internet connection required).
+  - GLD Historical Data (2015-2026).
+
+[INTERMEDIATE FILES]
+  - models/cv_fold_1.pt ... cv_fold_5.pt (Trained neural network weights).
+
+[FINAL OUTPUTS]
+  - results/predictions.csv (Tabular prediction data).
+  - results/predictions_vs_actual.png (Main result visualization).
+  - results/error_distribution.png (Statistical error analysis).
+  - results/training_history.png (Model convergence proof).
+
+5. SYSTEM REQUIREMENTS
+--------------------------------------------------------------------------------
+  - Python 3.8+
+  - Libraries: torch, pandas, numpy, scikit-learn, yfinance, matplotlib, seaborn.
+
+
+6. GLOSSARY AND TECHNICAL REFERENCE
+--------------------------------------------------------------------------------
+  Term                  | Technical Definition
+  ----------------------|-----------------------------------------------------------
+  GLD                   | SPDR Gold Shares ETF; tracks gold spot price, provides
+                        | OHLCV data. Ticker: GLD.
+  ETF                   | Exchange-Traded Fund; trades on exchanges, tracks an
+                        | underlying asset or index.
+  OHLCV                 | Open, High, Low, Close, Volume; standard candlestick
+                        | data format for financial markets.
+  Chronological Order   | Temporal ordering from t_0 to t_n; critical for time
+                        | series to prevent data leakage and correct rolling
+                        | window computations.
+  Data Leakage          | Training on information unavailable at inference time;
+                        | causes overoptimistic metrics and poor generalization.
+  Feature Engineering   | Domain-specific transformations of raw data into
+                        | higher-level representations (e.g., RSI from prices).
+  Technical Indicators  | Quantitative formulas applied to OHLCV data; categorized
+                        | into trend (SMA), momentum (RSI, MACD), volatility
+                        | (Bollinger Bands), and cyclical features.
+  Stationarity          | Time series property where mean and variance are constant
+                        | over time. Required for many ML models to generalize.
+  Returns               | Percentage price change: (P_{t+1} / P_t) - 1. Stationary
+                        | transformation of non-stationary price data.
+  Covariate Shift       | Change in input distribution between train and test sets;
+                        | occurs when training on absolute prices across different
+                        | eras (e.g., $1000 vs $2300 gold).
+  LSTM                  | Long Short-Term Memory; RNN variant with gating
+                        | mechanisms (forget, input, output gates) and cell state
+                        | to handle long-range dependencies. Solves vanishing
+                        | gradient problem of vanilla RNNs.
+  Self-Attention        | Mechanism computing pairwise relationships between all
+                        | positions in a sequence. Output = softmax(QK^T / sqrt(d))V
+  Multi-Head Attention  | Multiple independent attention mechanisms operating in
+                        | parallel, each learning different representation subspaces.
+  Query/Key/Value (QKV) | Projections of input used in attention: Query (what I'm
+                        | looking for), Key (what I contain), Value (my content).
+  Residual Connection   | Skip connection: output = f(x) + x. Enables gradient
+                        | flow through deep networks and identity preservation.
+  Layer Normalization   | Normalizes activations across features (not batches);
+                        | stabilizes training, especially with RNNs/Transformers.
+  Dropout               | Stochastic regularization; randomly zeroes a fraction
+                        | of activations during training. Rate=0.2 means 20%.
+  Overfitting           | Model memorizes training noise instead of learning
+                        | generalizable patterns; detected when val_loss increases
+                        | while train_loss decreases.
+  Walk-Forward CV       | Time-series validation with expanding training window;
+                        | prevents look-ahead bias and simulates real deployment.
+  Early Stopping        | Halts training when validation loss stops improving for
+                        | N epochs (patience=15). Prevents overfitting.
+  Adam Optimizer        | Adaptive moment estimation; combines RMSProp and
+                        | momentum. Default lr=0.003 in this project.
+  MSE Loss              | Mean Squared Error: (1/n) * sum(y_pred - y_true)^2;
+                        | penalizes large errors more than small ones.
+  ReduceLROnPlateau     | LR scheduler; reduces learning rate by factor=0.5 when
+                        | val_loss stagnates for 7 epochs. Fine-tunes convergence.
+  MinMaxScaler          | Linear normalization: x_scaled = (x - min) / (max - min);
+                        | maps features to [0, 1] range. Fit on train, apply to
+                        | test to prevent data leakage.
+  R² (R-squared)        | 1 - SS_res/SS_tot; proportion of variance explained by
+                        | model. 1.0 = perfect, 0.0 = baseline (predict mean).
+  MAE                   | Mean Absolute Error: (1/n) * sum(|y_pred - y_true|);
+                        | interpretable as average dollar error per prediction.
+  RMSE                  | Root Mean Squared Error: sqrt(MSE); more sensitive to
+                        | outliers than MAE.
+  Bias Correction       | Post-processing shift: y_corrected = y_pred + mean_error;
+                        | corrects systematic over/under-prediction observed in
+                        | the model.
+  Gradient Clipping     | Caps gradient norms (max_norm=1.0) to prevent exploding
+                        | gradients during backpropagation through LSTM.
+
+
+================================================================================
+                                END OF DOCUMENTATION
+================================================================================
