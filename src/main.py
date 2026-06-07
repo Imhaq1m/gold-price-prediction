@@ -11,14 +11,12 @@ This script orchestrates the complete ML pipeline:
 """
 
 from src.evaluation import (
-    evaluate_model,
-    plot_training_history,
     plot_predictions,
     plot_error_distribution,
     calculate_metrics,
     print_metrics,
 )
-from src.lstm_model import StackedLSTM, LSTMAttentionModel, train_model, predict
+from src.lstm_model import LSTMAttentionModel, train_model
 from src.feature_engineering import (
     add_technical_indicators,
     prepare_features,
@@ -71,10 +69,8 @@ def main():
     df = add_technical_indicators(df)
     feature_df, feature_columns = prepare_features(df)
 
-    # Add close price as a feature for better prediction context
     if "close" not in feature_columns:
         feature_columns = ["close"] + feature_columns
-        feature_df = df[feature_columns]
 
     print(f"Number of features: {len(feature_columns)}")
     print(f"Features: {feature_columns[:10]}...")
@@ -89,7 +85,7 @@ def main():
     # The model predicts H future returns from a single input sequence.
     df = df.dropna()
 
-    print(f"Target: Daily returns (stationary)")
+    print("Target: Daily returns (stationary)")
     print(f"Target range: [{df['returns'].min():.4f}, {df['returns'].max():.4f}]")
 
     # STEP 5.1: TRAIN-TEST SPLIT (95/5 as per paper)
@@ -97,7 +93,6 @@ def main():
     print("-" * 40)
 
     train_df, test_df = split_data(df, train_ratio=0.95)
-    test_dates = test_df.index
 
     print(f"Train size: {len(train_df)}, Test size: {len(test_df)}")
 
@@ -190,7 +185,7 @@ def main():
 
         cv_model_path = f"models/cv_fold_{fold + 1}.pt"
 
-        cv_history = train_model(
+        train_model(
             model=cv_model,
             X_train=cv_X_tr,
             y_train=cv_y_tr,
@@ -252,7 +247,7 @@ def main():
     # Select best fold by R²
     best_fold = max(cv_results, key=lambda x: x["metrics"]["R²"])
     print(f"\n{'=' * 60}")
-    print(f"CV RESULTS SUMMARY")
+    print("CV RESULTS SUMMARY")
     print(f"{'=' * 60}")
     print(f"{'Fold':<6} {'R²':>10} {'MAE':>10} {'RMSE':>10}")
     print(f"{'-' * 40}")
@@ -284,7 +279,6 @@ def main():
     feature_scaler = best_fold["feature_scaler"]
     target_scaler = best_fold["target_scaler"]
     test_df = best_fold["test_df"]
-    test_dates = best_fold["test_df"].index
     metrics = best_fold["metrics"]
 
     # ==========================================
@@ -388,8 +382,8 @@ def main():
     print("=" * 60)
 
     print(f"\nModel: LSTM-Attention — Direct Multi-Step (H={FORECAST_HORIZON})")
-    print(f"Method: Walk-Forward Cross Validation (5 folds)")
-    print(f"Final Metrics (1-step-ahead, Best Fold):")
+    print("Method: Walk-Forward Cross Validation (5 folds)")
+    print("Final Metrics (1-step-ahead, Best Fold):")
     for metric_name, value in price_metrics.items():
         if value is not None:
             if "Accuracy" in metric_name:
@@ -399,9 +393,9 @@ def main():
 
     # Compare with paper results
     print(f"\n{'=' * 60}")
-    print(f"COMPARISON WITH PAPER RESULTS (1-step)")
+    print("COMPARISON WITH PAPER RESULTS (1-step)")
     print(f"{'=' * 60}")
-    print(f"  Metric       | Our Result | Paper Result")
+    print("  Metric       | Our Result | Paper Result")
     print(f"  {'-' * 45}")
     print(f"  MAE            | {price_metrics['MAE']:>10.2f} | {14.46:>10.2f}")
     print(f"  MSE (RMSE²)    | {price_metrics['RMSE'] ** 2:>10.2f} | {373.09:>10.2f}")
@@ -491,7 +485,7 @@ def main():
     )
     predictions_df.index = all_dates
     predictions_df.to_csv("results/predictions.csv")
-    print(f"\nPredictions saved to results/predictions.csv")
+    print("\nPredictions saved to results/predictions.csv")
 
     # ==========================================
     # GENERATE VISUALIZATIONS
@@ -524,8 +518,8 @@ def main():
     joblib.dump(target_scaler, "models/target_scaler.pkl")
     with open("models/bias_correction.txt", "w") as f:
         f.write(f"{mean_error:.6f}")
-    print(f"  - feature_scaler.pkl")
-    print(f"  - target_scaler.pkl")
+    print("  - feature_scaler.pkl")
+    print("  - target_scaler.pkl")
     print(f"  - bias_correction.txt (mean_error_pct={mean_error * 100:.4f}%)")
 
     # Save the retrained (on all data) model
@@ -546,12 +540,12 @@ def main():
     print("\n" + "=" * 60)
     print("PIPELINE COMPLETE")
     print("=" * 60)
-    print(f"\nResults saved in 'results/' directory:")
-    print(f"  - predictions.csv")
-    print(f"  - predictions_vs_actual.png")
-    print(f"  - error_distribution.png")
-    print(f"\nModels saved in 'models/' directory:")
-    print(f"  - cv_fold_1.pt through cv_fold_5.pt")
+    print("\nResults saved in 'results/' directory:")
+    print("  - predictions.csv")
+    print("  - predictions_vs_actual.png")
+    print("  - error_distribution.png")
+    print("\nModels saved in 'models/' directory:")
+    print("  - cv_fold_1.pt through cv_fold_5.pt")
     print(f"  - best_lstm_attention.pt (H={FORECAST_HORIZON})")
     print(f"{'=' * 60}\n")
 
