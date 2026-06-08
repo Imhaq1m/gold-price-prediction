@@ -338,7 +338,7 @@ def print_metric_justifications():
   RMSE (Root Mean Squared Error):
     Penalizes large errors more heavily than MAE via squaring. Useful
     for identifying models with extreme prediction failures. The gap
-    between MAE and RMSE indicates error variance — a small gap means
+    between MAE and RMSE indicates error variance - a small gap means
     consistent errors, a large gap means occasional big misses.
 
   MAPE (Mean Absolute Percentage Error):
@@ -347,15 +347,15 @@ def print_metric_justifications():
     ~0.5% of the true price on average. Useful for comparing accuracy
     across different price regimes.
 
-  R² (R-squared / Coefficient of Determination):
+  R2 (R-squared / Coefficient of Determination):
     Proportion of variance in actual prices explained by the model.
-    R² = 0.96 means the model explains 96% of price variance, indicating
+    R2 = 0.96 means the model explains 96% of price variance, indicating
     excellent fit. Values near 1 are expected for price prediction since
-    prices exhibit strong autocorrelation (today ≈ yesterday).
+    prices exhibit strong autocorrelation (today ~ yesterday).
 
   Directional Accuracy (%):
     Percentage of correct direction predictions (up/down). Critical for
-    trading applications — a model can have low MAE but wrong direction
+    trading applications -- a model can have low MAE but wrong direction
     and still lose money. This metric validates that the model captures
     trend changes, not just price levels.
 """)
