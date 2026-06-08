@@ -184,6 +184,7 @@ class LSTMAttentionModel(nn.Module):
         key_dim: int = 50,
         dropout: float = 0.2,
         output_size: int = 1,
+        activation: str = "tanh",
     ):
         """
         Args:
@@ -192,7 +193,8 @@ class LSTMAttentionModel(nn.Module):
             num_heads: Number of attention heads (paper: 4)
             key_dim: Dimension for attention keys (paper: 50)
             dropout: Dropout rate
-            output_size: Number of future steps to predict (1 = single-step, >1 = direct multi-step)
+            output_size: Number of future steps to predict
+            activation: Transfer function after attention ('tanh', 'relu', 'leaky_relu')
         """
         super(LSTMAttentionModel, self).__init__()
 
@@ -217,6 +219,18 @@ class LSTMAttentionModel(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(hidden_size)
 
+        # Activation function (transfer function)
+        activations = {
+            "tanh": nn.Tanh(),
+            "relu": nn.ReLU(),
+            "leaky_relu": nn.LeakyReLU(negative_slope=0.01),
+        }
+        if activation not in activations:
+            raise ValueError(
+                f"Unknown activation '{activation}'. Choose from {list(activations.keys())}"
+            )
+        self.activation_fn = activations[activation]
+
         # Output layer
         self.fc = nn.Linear(hidden_size, output_size)
 
@@ -238,6 +252,9 @@ class LSTMAttentionModel(nn.Module):
         attn_out, _ = self.attention(lstm_out, lstm_out, lstm_out)
         attn_out = self.dropout2(attn_out)
         attn_out = self.layer_norm(attn_out + lstm_out)  # Residual connection
+
+        # Activation (transfer function) after attention
+        attn_out = self.activation_fn(attn_out)
 
         # Take the output from the last time step
         out = attn_out[:, -1, :]  # (batch, hidden_size)
@@ -316,6 +333,7 @@ def train_model(
     learning_rate: float = 0.001,
     patience_es: int = 15,
     model_path: str = "models/best_lstm_model.pt",
+    optimizer_type: str = "adam",
 ) -> dict:
     """
     Train the LSTM model with early stopping and learning rate scheduling.
@@ -331,6 +349,7 @@ def train_model(
         learning_rate: Initial learning rate
         patience_es: Early stopping patience
         model_path: Path to save best model
+        optimizer_type: Optimizer to use ('adam', 'sgd', 'rmsprop', 'adamw')
 
     Returns:
         Dictionary with training history (loss, val_loss, mae, val_mae)
@@ -345,7 +364,17 @@ def train_model(
 
     # Loss and optimizer
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizers = {
+        "adam": torch.optim.Adam,
+        "sgd": torch.optim.SGD,
+        "rmsprop": torch.optim.RMSprop,
+        "adamw": torch.optim.AdamW,
+    }
+    if optimizer_type not in optimizers:
+        raise ValueError(
+            f"Unknown optimizer '{optimizer_type}'. Choose from {list(optimizers.keys())}"
+        )
+    optimizer = optimizers[optimizer_type](model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=7, min_lr=1e-6
     )
@@ -360,6 +389,7 @@ def train_model(
 
     print(f"\nTraining for up to {epochs} epochs (batch_size={batch_size})...")
     print(f"Device: {device}")
+    print(f"Optimizer: {optimizer_type.upper()}, Activation: tanh")
     print(
         f"Train samples: {len(X_train)}, Val samples: {len(X_val) if X_val is not None else 0}"
     )

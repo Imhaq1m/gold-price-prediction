@@ -10,16 +10,12 @@ This script orchestrates the complete ML pipeline:
 5. Model evaluation and visualization
 """
 
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.svm import SVR
-
 from src.evaluation import (
     plot_predictions,
     plot_error_distribution,
     calculate_metrics,
-    print_metrics,
     compare_models,
+    print_metric_justifications,
 )
 from src.lstm_model import LSTMAttentionModel, train_model
 from src.feature_engineering import (
@@ -28,6 +24,7 @@ from src.feature_engineering import (
     create_sequences,
     scale_data,
 )
+from src.baseline_models import train_and_evaluate_baselines, print_comparison_table
 from src.data_module import fetch_gold_data, preprocess_data, split_data
 import os
 import joblib
@@ -346,38 +343,44 @@ def main():
     print("\nBaseline Comparison")
     print("-" * 40)
 
-    # Rebuild test sequences using returns (not target_return)
+    # Extract best fold data for baseline comparison
     best_cv_train_df_temp = df.iloc[
         : train_min_size + (best_fold["fold"] - 1) * test_size
     ]
     best_cv_test_df_temp = best_fold["test_df"]
 
+    # Train and evaluate sklearn baselines
+    baseline_results = train_and_evaluate_baselines(
+        best_cv_train_df_temp, best_cv_test_df_temp, feature_columns
+    )
+
+    # Naive baseline: predict no change (0% return)
     all_close_for_baseline = np.concatenate(
         [best_cv_train_df_temp["close"].values, best_cv_test_df_temp["close"].values]
     )
     sequence_indices = np.arange(SEQ_LENGTH, len(all_close_for_baseline))
     prev_close_prices = all_close_for_baseline[sequence_indices - 1]
 
-    # Actual returns for first step: returns[t+1] where sequence ends at t
     test_returns = best_cv_test_df_temp["returns"].values
     actual_returns_full = np.concatenate(
         [best_cv_train_df_temp["returns"].values[-SEQ_LENGTH:], test_returns]
     )
-    # Align with sequences (first step = index SEQ_LENGTH)
     actual_returns_aligned = actual_returns_full[SEQ_LENGTH:]
     actual_prices = prev_close_prices[-len(actual_returns_aligned) :] * (
         1 + actual_returns_aligned
     )
-
-    # Naive baseline: predict no change (0% return)
     y_naive = prev_close_prices[-len(actual_prices) :]
-
     naive_metrics = calculate_metrics(actual_prices, y_naive)
-    print_metrics(naive_metrics, "Naive Baseline")
 
-    print("\nLSTM-Attention vs Naive:")
-    print(f"  LSTM R²:  {price_metrics['R²']:.4f}")
-    print(f"  Naive R²: {naive_metrics['R²']:.4f}")
+    # Print full comparison table
+    print_comparison_table(price_metrics, baseline_results, naive_metrics)
+
+    # Generate comparison bar chart
+    all_model_metrics = {"LSTM-Attention": price_metrics}
+    for name, res in baseline_results.items():
+        all_model_metrics[name] = res["metrics"]
+    all_model_metrics["Naive (0% return)"] = naive_metrics
+    compare_models(all_model_metrics, save_path="results/model_comparison.png")
 
     # ==========================================
     # FINAL RESULTS
@@ -406,6 +409,9 @@ def main():
     print(f"  MSE (RMSE²)    | {price_metrics['RMSE'] ** 2:>10.2f} | {373.09:>10.2f}")
     print(f"  R²             | {price_metrics['R²']:>10.4f} | {0.92:>10.4f}")
     print(f"{'=' * 60}")
+
+    # Metric justifications
+    print_metric_justifications()
 
     # Save predictions CSV from best fold (first-step only)
     from src.lstm_model import predict as predict_func
@@ -540,6 +546,17 @@ def main():
     print(f"  - best_lstm_attention.pt (H={FORECAST_HORIZON}, retrained on all data)")
 
     # ==========================================
+    # HYPERPARAMETER TUNING (optional, can be slow)
+    # ==========================================
+    RUN_PARAMETER_SWEEP = False  # Set to True to run grid search
+    if RUN_PARAMETER_SWEEP:
+        print("\n[OPTIONAL] Running Hyperparameter Tuning...")
+        print("-" * 40)
+        from src.hyperparameter_tuning import run_parameter_sweep
+
+        run_parameter_sweep(df, feature_columns)
+
+    # ==========================================
     # SUMMARY
     # ==========================================
     print("\n" + "=" * 60)
@@ -549,6 +566,9 @@ def main():
     print("  - predictions.csv")
     print("  - predictions_vs_actual.png")
     print("  - error_distribution.png")
+    print("  - model_comparison.png")
+    if RUN_PARAMETER_SWEEP:
+        print("  - parameter_sweep.csv")
     print("\nModels saved in 'models/' directory:")
     print("  - cv_fold_1.pt through cv_fold_5.pt")
     print(f"  - best_lstm_attention.pt (H={FORECAST_HORIZON})")

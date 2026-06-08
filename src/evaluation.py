@@ -317,3 +317,45 @@ def evaluate_model(
     print(f"Predictions saved to {os.path.join(output_dir, 'predictions.csv')}")
 
     return metrics, y_test, y_pred
+
+
+def print_metric_justifications():
+    """
+    Print justification for each evaluation metric used.
+
+    Explains why each metric is appropriate for gold price prediction.
+    """
+    print("\n" + "=" * 70)
+    print("METRIC JUSTIFICATIONS")
+    print("=" * 70)
+    print("""
+  MAE (Mean Absolute Error):
+    Measures average absolute error in dollars. Interpretable directly
+    as "the model is off by $X per prediction." Less sensitive to outliers
+    than RMSE, which is desirable because gold price spikes (e.g., market
+    shocks) are rare events we don't want to over-penalize.
+
+  RMSE (Root Mean Squared Error):
+    Penalizes large errors more heavily than MAE via squaring. Useful
+    for identifying models with extreme prediction failures. The gap
+    between MAE and RMSE indicates error variance — a small gap means
+    consistent errors, a large gap means occasional big misses.
+
+  MAPE (Mean Absolute Percentage Error):
+    Expresses error as a percentage of the actual price, making it
+    scale-independent. A MAPE of 0.56% means predictions are within
+    ~0.5% of the true price on average. Useful for comparing accuracy
+    across different price regimes.
+
+  R² (R-squared / Coefficient of Determination):
+    Proportion of variance in actual prices explained by the model.
+    R² = 0.96 means the model explains 96% of price variance, indicating
+    excellent fit. Values near 1 are expected for price prediction since
+    prices exhibit strong autocorrelation (today ≈ yesterday).
+
+  Directional Accuracy (%):
+    Percentage of correct direction predictions (up/down). Critical for
+    trading applications — a model can have low MAE but wrong direction
+    and still lose money. This metric validates that the model captures
+    trend changes, not just price levels.
+""")
