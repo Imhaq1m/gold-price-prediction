@@ -42,8 +42,8 @@ def load_trained_model(model_path: str) -> LSTMAttentionModel:
     return model
 
 
-def prepare_recent_data() -> tuple:
-    raw = fetch_gold_data(ticker="GLD", start="2024-01-01", interval="1d")
+def prepare_recent_data(ticker: str = "GLD") -> tuple:
+    raw = fetch_gold_data(ticker=ticker, start="2024-01-01", interval="1d")
     raw = preprocess_data(raw)
     actual_last_date = raw.index[-1]
     actual_last_close = raw["close"].iloc[-1]
@@ -145,6 +145,11 @@ def main():
         help="Path to bias correction file (percentage, default: models/bias_correction.txt)",
     )
     parser.add_argument(
+        "--ticker",
+        default="GLD",
+        help="Yahoo Finance ticker symbol (default: GLD)",
+    )
+    parser.add_argument(
         "--days",
         type=int,
         default=1,
@@ -178,7 +183,9 @@ def main():
         print("Warning: bias correction file not found, using 0.0")
 
     print("Fetching and preparing recent market data...")
-    df, feature_df, _, actual_last_date, actual_last_close = prepare_recent_data()
+    df, feature_df, _, actual_last_date, actual_last_close = prepare_recent_data(
+        ticker=args.ticker
+    )
     last_date = (
         actual_last_date.date()
         if hasattr(actual_last_date, "date")
@@ -217,7 +224,7 @@ def main():
 
         import yfinance as yf
 
-        raw_full = yf.Ticker("GLD").history(start="2024-01-01", interval="1d")
+        raw_full = yf.Ticker(args.ticker).history(start="2024-01-01", interval="1d")
         raw_full.columns = [
             c.lower() if isinstance(c, str) else "_".join(c).lower()
             for c in raw_full.columns

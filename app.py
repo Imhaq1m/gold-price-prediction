@@ -37,6 +37,7 @@ models = []
 feature_scaler = None
 target_scaler = None
 mean_error = 0.0
+TICKER = os.environ.get("TICKER", "GLD")
 
 # Simple data cache to avoid refetching yfinance on every AJAX call
 _data_cache = {"df": None, "feature_df": None, "timestamp": None}
@@ -95,7 +96,7 @@ def _fetch_and_prepare():
     ):
         return _data_cache["df"], _data_cache["feature_df"]
 
-    raw = fetch_gold_data(ticker="GLD", start="2022-01-01")
+    raw = fetch_gold_data(ticker=TICKER, start="2022-01-01")
     raw = preprocess_data(raw)
     df = add_technical_indicators(raw)
     feature_df, feature_columns = prepare_features(df)
@@ -213,6 +214,15 @@ load_artifacts()
 
 if __name__ == "__main__":
     import sys
+
+    # Parse --ticker from CLI args (before Flask starts)
+    for i, arg in enumerate(sys.argv):
+        if arg == "--ticker" and i + 1 < len(sys.argv):
+            TICKER = sys.argv[i + 1]
+            # Remove both from sys.argv so Flask doesn't complain
+            sys.argv.pop(i)
+            sys.argv.pop(i)
+            break
 
     ngrok_tunnel = None
     if "--ngrok" in sys.argv:

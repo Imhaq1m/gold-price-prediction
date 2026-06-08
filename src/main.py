@@ -10,11 +10,16 @@ This script orchestrates the complete ML pipeline:
 5. Model evaluation and visualization
 """
 
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+
 from src.evaluation import (
     plot_predictions,
     plot_error_distribution,
     calculate_metrics,
     print_metrics,
+    compare_models,
 )
 from src.lstm_model import LSTMAttentionModel, train_model
 from src.feature_engineering import (
